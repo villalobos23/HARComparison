@@ -1,0 +1,130 @@
+---
+title: "HAR - Treebag vs Rpart"
+author: "Luis J. Villalobos"
+date: "10 de abril de 2016"
+output: html_document
+---
+
+```{r global_options, include=FALSE}
+ library(caret)
+ library(rpart)
+ library(rattle)
+ library(mlbench)
+ library(ipred)
+ library(plyr)
+ library(e1071)
+ set.seed(23031990)
+```
+
+##Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset)(Many thanks for the dataset).
+
+Furthermore the intention of this investigation is to compare two simple classification techniques and determine which has greater accuracy without having excesive computations. in particular we are comparing the rpart(recursive partition) method and treebag (Bagged CART) method of the caret package in r. the feature to predict is the class of excercise being executed. that is contained in the "classe" variable.
+
+The training data for this project are available [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and the test set [here](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+**Note**: If you are going to reproduce this document, you must download the datasets before running it.
+
+##Loading and Cleaning the dataset.
+
+After loading the data set we clean and remove variables with missing values in order to use variables that have more information to contribute to the evaluated models. furthermore, the first five variables are related to the identification of the subject and the moment of the day the observation was executed. Those variables were deemed unnecesary for the study.
+
+Given the size of the training set we leave the main test set untouch and create a new test set from the training set.
+
+```{r}
+
+ validationSet <- read.csv("pml-testing.csv",na.strings = c("","NA"))
+ trainSet <- read.csv("pml-training.csv",na.strings = c("","NA"))
+ 
+ na_count2 <-sapply(trainSet, function(y) sum(length(which(is.na(y))))>0)
+ na_count <- data.frame(na_count2)
+ trainSet <- trainSet[,!na_count$na_count2]
+ trainSet <- trainSet[,-c(1,2,3,4,5)]
+ trainIndex <- createDataPartition(trainSet$classe, p=0.7, list=FALSE)
+ trainSet.trainSlice <- trainSet[trainIndex,]
+ trainSet.testSlice <- trainSet[-trainIndex,]
+```
+
+##Feature Selection
+Given the amount of variables with missing values, or with little variability we use a correlation matrix to find and remove those variables that have high correlation (over 0.75) to mantain those that explain in greater measure the variation of the data.
+
+We also checked the proportion of the data in the training set and we detected a higher number of excercises labeled "A".
+
+```{r}
+ #proportion and useful variables
+ 
+ summary(trainSet.trainSlice$classe)
+ 
+ M <- cor(trainSet.trainSlice[,-c(1,55)])
+ highCor <- findCorrelation(M,cutoff = 0.75)
+ trainSet.redTrainSilce <- trainSet.trainSlice[,-highCor]
+``` 
+
+##Model selection
+
+We use repeated cross validation for our naive and first implementation, for the reasons stated in the answer to the question in [this thread](explanation http://stats.stackexchange.com/questions/18348/differences-between-cross-validation-and-bootstrapping-to-estimate-the-predictio).
+
+Our second attempt to create a classification tree is using the Bagged CART method (treebag in caret) with default parameters(Bootstrapped (25 reps), the selection of this method was made  according to the explanations made in [this other thread](http://stats.stackexchange.com/questions/71779/how-bagging-on-cart-rpart-is-different-from-cart-with-cross-validation). 
+
+Another factor that was key to selection was the computational time it took in the computer where it was run to get the results. For that reason we decided not to use a random forest to generate out prediction model.
+
+```{r cache=TRUE,message=FALSE,warning=FALSE}
+ fitControl <- trainControl(method="repeatedcv",number = 10,repeats = 10)
+ #first attempt
+ rpartFit <- train(classe ~ ., data=  trainSet.redTrainSilce,method="rpart",trControl=fitControl)
+ predictRpart <- predict(rpartFit,newdata = trainSet.redTrainSilce)
+ rpartFit.cmt <- confusionMatrix(predictRpart,trainSet.redTrainSilce$classe)
+ predictRpart.test <- predict(rpartFit,newdata = trainSet.testSlice)
+ rpartFit.cmt.test <- confusionMatrix(predictRpart.test,trainSet.testSlice$classe)
+ 
+ #second attempt using treebag
+ tbfit <- train(classe ~ ., data = trainSet.redTrainSilce, method="treebag")
+ predictTB <- predict(tbfit, newdata = trainSet.redTrainSilce)
+ tbfit.cmt <- confusionMatrix(predictTB,trainSet.redTrainSilce$classe)
+ predictTB.test <- predict(tbfit, newdata = trainSet.testSlice)
+ tbfit.cmt.test <- confusionMatrix(predictTB.test,trainSet.testSlice$classe)
+ 
+```
+
+##Model comparison and selection
+We portray both confusion matrices and also compare their accuracy in order to use one for prediction with the inner test set and validation set.First the rpart model
+```{r echo=FALSE}
+ #resubstitution error
+ rpartFit.cmt$table
+ rpartFit.cmt$overall["Accuracy"]
+```
+
+At this point we can observe that this configuration is insufficient to analyze the dataset
+
+```{r echo=FALSE}
+ #dummy out of sample error
+ rpartFit.cmt.test$table
+ rpartFit.cmt.test$overall["Accuracy"]
+```
+
+Thus giving a worse result for the test set.
+
+Following the treebag model.
+
+```{r echo=FALSE}
+ #resubstitution error
+  tbfit.cmt$table
+  tbfit.cmt$overall["Accuracy"]
+```
+
+
+
+```{r echo=FALSE}
+  #dummy out of sample error
+  tbfit.cmt.test$table
+  tbfit.cmt.test$overall["Accuracy"]
+```
+
+We  decide to use the treebag model to be used over the validation set. With the final result for the prediction.
+
+```{r echo=FALSE}
+ #show accuracy and confusion matrix
+ predictTB.val <- predict(tbfit, newdata = validationSet)
+ predictTB.val
+```
