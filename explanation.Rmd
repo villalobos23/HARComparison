@@ -30,7 +30,7 @@ The training data for this project are available [here](https://d396qusza40orc.c
 
 After loading the data set we clean and remove variables with missing values in order to use variables that have more information to contribute to the evaluated models. furthermore, the first five variables are related to the identification of the subject and the moment of the day the observation was executed. Those variables were deemed unnecesary for the study.
 
-Given the size of the training set we leave the main test set untouch and create a new test set from the training set.
+Given the size of the training set we leave the main test set untouch and create a new test set from the training set. This subpartitioning of the data set gives us cross validation by executing this subsampling of the data at 70% for the training set and 30% for the sub testing set.
 
 ```{r}
 
@@ -97,13 +97,18 @@ We portray both confusion matrices and also compare their accuracy in order to u
 
 At this point we can observe that this configuration is insufficient to analyze the dataset
 
+
 ```{r echo=FALSE}
  #dummy out of sample error
  rpartFit.cmt.test$table
  rpartFit.cmt.test$overall["Accuracy"]
 ```
 
-Thus giving a worse result for the test set.
+Thus giving a worse result for the test set.This model has an unbalanced decision tree towards class A, as we can see in the decision tree.
+
+```{r}
+ fancyRpartPlot(rpartFit$finalModel,sub = "",main="")
+```
 
 Following the treebag model.
 
@@ -113,13 +118,15 @@ Following the treebag model.
   tbfit.cmt$overall["Accuracy"]
 ```
 
-
+It does a better job thanks to the bootstrapping.
 
 ```{r echo=FALSE}
   #dummy out of sample error
   tbfit.cmt.test$table
   tbfit.cmt.test$overall["Accuracy"]
 ```
+
+##Final Predictions
 
 We  decide to use the treebag model to be used over the validation set. With the final result for the prediction.
 
@@ -128,3 +135,5 @@ We  decide to use the treebag model to be used over the validation set. With the
  predictTB.val <- predict(tbfit, newdata = validationSet)
  predictTB.val
 ```
+
+According to the resubstitution and the accuracy of the inner test set data we can expect that the out of sample error will be near the misclassification error in the sub test set, that means that it should be around `r 1-tbfit.cmt.test$overall["Accuracy"]`. 
